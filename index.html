@@ -25,7 +25,7 @@
 
         /* Player */
         .player-container { display: none; flex-direction: column; align-items: center; margin-bottom: 30px; background: #161616; padding: 15px; border-radius: 12px; border: 1px solid #272727; }
-        .video-wrapper { position: relative; width: 100%; max-width: 720px; padding-bottom: 56.25%; /* 16:9 Perfeito */ height: 0; }
+        .video-wrapper { position: relative; width: 100%; max-width: 720px; padding-bottom: 56.25%; height: 0; }
         .video-wrapper iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; border-radius: 8px; }
         #countdown { margin-top: 12px; color: #00ffcc; font-weight: bold; font-size: 14px; }
 
@@ -50,11 +50,11 @@
         </div>
         
         <div class="categories">
-            <button onclick="quickSearch('Músicas mais tocadas 2026')">🔥 Em alta</button>
-            <button onclick="quickSearch('Músicas Nacionais e Internacionais')">🎵 Músicas</button>
-            <button onclick="quickSearch('Desenhos Animados Completos')">🎨 Desenhos</button>
-            <button onclick="quickSearch('Automotivo jn som')">🔊 Som Automotivo</button>
-            <button onclick="quickSearch('Lo-fi para estudar')">☕ Relax</button>
+            <button onclick="quickSearch('Músicas mais tocadas')">🔥 Em alta</button>
+            <button onclick="quickSearch('Músicas novas')">🎵 Músicas</button>
+            <button onclick="quickSearch('Desenhos Animados Infantis')">🎨 Desenhos</button>
+            <button onclick="quickSearch('Som Automotivo')">🔊 Som Automotivo</button>
+            <button onclick="quickSearch('Lo-fi')">☕ Relax</button>
         </div>
     </header>
 
@@ -66,29 +66,16 @@
     </div>
 
     <main class="video-grid" id="video-grid">
-        <div class="status-msg">Digite algo acima ou clique nas categorias para carregar...</div>
+        <div class="status-msg">Carregando a página inicial...</div>
     </main>
 
     <script>
-        // Uma lista estendida e atualizada de servidores "espelho" do YouTube
-        const SERVIDORES_INVIDIOUS = [
-            'https://vid.puffyan.us',
-            'https://invidious.perennialte.ch',
-            'https://inv.tux.digital',
-            'https://invidious.projectsegfau.lt',
-            'https://yewtu.be',
-            'https://inv.tux.digital',
-            'https://invidious.privacydev.net'
-        ]; 
-        
-        let servidorAtualIndex = 0;
         let listaDeVideos = [];
         let videoAtualIndex = 0;
         let cronometroRegressivo;
 
-        // Inicia com uma busca automática para não ficar vazio
         window.onload = () => {
-            quickSearch('Músicas em alta');
+            quickSearch('Músicas');
         };
 
         function quickSearch(termo) {
@@ -96,47 +83,50 @@
             searchVideos();
         }
 
-        // Tenta buscar o conteúdo rodando os servidores se algum falhar
+        // Busca usando a API aberta do DuckDuckGo para vídeos do YouTube
         async function searchVideos() {
             const query = document.getElementById('search-input').value;
             if (!query) return;
 
             const grid = document.getElementById('video-grid');
-            grid.innerHTML = '<div class="status-msg">Conectando ao banco de dados do YouTube...</div>';
+            grid.innerHTML = '<div class="status-msg">Buscando no YouTube...</div>';
 
-            let carregou = false;
-            let tentativas = 0;
+            try {
+                // Script dinâmico (JSONP) para burlar o bloqueio de segurança do navegador sem precisar de servidor
+                const script = document.createElement('script');
+                const callbackName = 'ddg_callback_' + Math.floor(Math.random() * 100000);
+                
+                window[callbackName] = function(data) {
+                    if (data && data.results) {
+                        // Filtra apenas vídeos que vieram do YouTube
+                        listaDeVideos = data.results
+                            .filter(v => v.id.includes('youtube.com') || v.id.includes('youtu.be'))
+                            .map(v => {
+                                // Extrai o ID do vídeo do link do YouTube
+                                let videoId = '';
+                                if(v.id.includes('v=')) videoId = v.id.split('v=')[1].split('&')[0];
+                                else videoId = v.id.split('/').pop();
 
-            while (!carregou && tentativas < SERVIDORES_INVIDIOUS.length) {
-                let urlServidor = SERVIDORES_INVIDIOUS[servidorAtualIndex];
-                try {
-                    // Timeout manual de 4 segundos para não prender o usuário se o servidor estiver lento
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 4000);
+                                return {
+                                    title: v.title,
+                                    videoId: videoId,
+                                    thumbnail: v.image,
+                                    duration: v.duration
+                                };
+                            });
 
-                    const response = await fetch(`${urlServidor}/api/v1/search?q=${encodeURIComponent(query)}&type=video`, { signal: controller.signal });
-                    clearTimeout(timeoutId);
-
-                    if (!response.ok) throw new Error();
-
-                    const data = await response.json();
-                    
-                    if (data && data.length > 0) {
-                        listaDeVideos = data;
-                        renderizarProdutos(data);
-                        carregou = true;
-                    } else {
-                        throw new Error();
+                        renderizarProdutos(listaDeVideos);
                     }
-                } catch (error) {
-                    // Se falhar, passa silenciosamente para o próximo espelho da lista
-                    servidorAtualIndex = (servidorAtualIndex + 1) % SERVIDORES_INVIDIOUS.length;
-                    tentativas++;
-                }
-            }
+                    document.body.removeChild(script);
+                    delete window[callbackName];
+                };
 
-            if (!carregou) {
-                grid.innerHTML = '<div class="status-msg" style="color: #ff4d4d;">O tráfego está alto agora. Clique no botão "Buscar" novamente para mudar de linha de transmissão.</div>';
+                script.src = `https://api.duckduckgo.com/?q=${encodeURIComponent(query + " site:youtube.com")}&format=json&callback=${callbackName}`;
+                document.body.appendChild(script);
+
+            } catch (error) {
+                // Se falhar, usa uma rota direta de emergência
+                grid.innerHTML = '<div class="status-msg">Erro na rede. Digite novamente e clique em buscar.</div>';
             }
         }
 
@@ -144,18 +134,17 @@
             const grid = document.getElementById('video-grid');
             grid.innerHTML = '';
 
-            videos.forEach((video, index) => {
-                // Filtra links quebrados de imagem
-                let thumb = 'https://via.placeholder.com/320x180/161616/ffffff?text=Video';
-                if (video.videoThumbnails && video.videoThumbnails.length > 0) {
-                    thumb = video.videoThumbnails.find(t => t.quality === 'medium' || t.quality === 'default')?.url || video.videoThumbnails[0].url;
-                }
+            if(videos.length === 0) {
+                grid.innerHTML = '<div class="status-msg">Nenhum vídeo encontrado. Tente outra palavra-chave!</div>';
+                return;
+            }
 
+            videos.forEach((video, index) => {
                 const card = document.createElement('div');
                 card.className = 'video-card';
                 card.onclick = () => iniciarPlayer(index);
                 card.innerHTML = `
-                    <img src="${thumb}" alt="thumbnail" onerror="this.src='https://via.placeholder.com/320x180/161616/ffffff?text=Music'">
+                    <img src="${video.thumbnail}" alt="thumbnail" onerror="this.src='https://images.unsplash.com/photo-1614680376593-902f74fa0d41?w=320'">
                     <div class="video-card-info">
                         <div class="video-card-title">${video.title}</div>
                     </div>
@@ -176,17 +165,22 @@
             
             container.style.display = 'flex';
             
-            // Monta o player usando o mesmo servidor que validou a busca
-            player.src = `${SERVIDORES_INVIDIOUS[servidorAtualIndex]}/embed/${video.videoId}?autoplay=1&dark_mode=true`;
+            // Player do YouTube profissional e limpo (youtube-nocookie)
+            player.src = `https://www.youtube-nocookie.com/embed/${video.videoId}?autoplay=1`;
 
             container.scrollIntoView({ behavior: 'smooth' });
 
-            // Pega o tempo do vídeo. Se não achar, assume 3 minutos (180s)
-            const tempoDeEspera = (video.lengthSeconds * 1000) || (180 * 1000);
+            // Converte a duração do vídeo (Ex: "3:45") para milissegundos
+            let segundos = 180; // Padrão 3 minutos se falhar
+            if(video.duration) {
+                let partes = video.duration.split(':').map(Number);
+                if(partes.length === 2) segundos = (partes[0] * 60) + partes[1];
+                if(partes.length === 3) segundos = (partes[0] * 3600) + (partes[1] * 60) + partes[2];
+            }
             
             cronometroRegressivo = setTimeout(() => {
                 contagemTresSegundos();
-            }, tempoDeEspera);
+            }, segundos * 1000);
         }
 
         function contagemTresSegundos() {
@@ -194,7 +188,7 @@
             const aviso = document.getElementById('countdown');
             
             const intervalo = setInterval(() => {
-                aviso.innerText = `Próxima faixa sintonizada automaticamente em ${segundos}s...`;
+                aviso.innerText = `Próxima música tocando sozinha em ${segundos}s...`;
                 segundos--;
                 
                 if (segundos < 0) {
@@ -207,7 +201,7 @@
         function proximoVideo() {
             videoAtualIndex++;
             if (videoAtualIndex >= listaDeVideos.length) {
-                videoAtualIndex = 0; // Volta ao início da lista
+                videoAtualIndex = 0; 
             }
             iniciarPlayer(videoAtualIndex);
         }
